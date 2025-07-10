@@ -8,7 +8,7 @@ from aiogram.types import (
 )
 
 API_TOKEN      = os.getenv("BOT_TOKEN")
-ADMIN_ID       = os.getenv("ADMIN_ID")
+ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 CHECK_INTERVAL = 5        
 PRICE      = 100      
 PROVIDER_STAR  = "STARS"  
