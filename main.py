@@ -1,5 +1,4 @@
-import asyncio
-import os
+import asyncio, os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -9,145 +8,103 @@ from aiogram.types import (
 
 API_TOKEN      = os.getenv("BOT_TOKEN")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
-CHECK_INTERVAL = 5        
-PRICE      = 500    
-PROVIDER_STAR  = "STARS"  
+CHECK_INTERVAL = 5          
+PRICE          = 500        
+PROVIDER_STAR  = "STARS"
+BOT_USER       = os.getenv("BOT_USER")
 
 bot = Bot(API_TOKEN)
 dp  = Dispatcher()
 
-# ────────── /start ──────────
-@dp.message(Command("start"))
-async def start(m: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 Получить подарок за 15 ⭐", callback_data="buy15")],
-        [InlineKeyboardButton(text=f"💸 Донат {PRICE} ⭐",               callback_data="donate15")],
-        [InlineKeyboardButton(text="💰 Баланс бота",              callback_data="bal")]
+# ────────────────── единая «шапка» меню ──────────────────
+def main_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎁 Подарок за 15 ⭐", callback_data="buy15")],
+        [InlineKeyboardButton(text=f"💸 Донат {PRICE} ⭐", callback_data="donate")],
+        [InlineKeyboardButton(text="🔄 Перезапуск",       url=f"https://t.me/{BOT_USER}?start=go")]
     ])
-    await m.answer("Выберите действие:", reply_markup=kb)
+
+# ────────── /start и /menu (для кнопки-меню Telegram) ──────────
+@dp.message(Command("start", "menu"))
+async def cmd_menu(m: Message):
+    await m.answer("Выберите действие:", reply_markup=main_keyboard())
 
 # ────────── подарок за 15 ⭐ ──────────
 @dp.callback_query(F.data == "buy15")
 async def buy15(c: CallbackQuery):
     if c.from_user.id != ADMIN_ID:
-        await c.answer("Доступно только владельцу бота.", show_alert=True)
-        return
+        await c.answer("Только владелец бота.", show_alert=True); return
 
     gifts = await bot.get_available_gifts()
     gift15 = next((g for g in gifts.gifts if g.star_count == 15), None)
-
     if not gift15:
-        await c.message.answer("😢 Сейчас нет подарка за 15 звёзд.")
-        print("INFO  |  Нет подарка за 15 XTR")
-    else:
-        try:
-            await bot.send_gift(user_id=ADMIN_ID, gift_id=gift15.id)
-            await c.message.answer("🎉 Подарок отправлен!")
-            print("OK    |  15-звёздочный подарок отправлен админу")
-        except Exception as e:
-            await c.message.answer(f"❌ Не удалось подарить: {e}")
-            print(f"ERR   |  Не удалось подарить 15 ⭐: {e}")
+        await c.message.answer("😢 Подарка за 15 ⭐ нет."); await c.answer(); return
+
+    try:
+        await bot.send_gift(user_id=ADMIN_ID, gift_id=gift15.id)
+        await c.message.answer("🎉 Подарок отправлен!")
+    except Exception as e:
+        await c.message.answer(f"❌ Ошибка: {e}")
     await c.answer()
 
-# ────────── донат 15 ⭐ ──────────
-@dp.callback_query(F.data == "donate15")
-async def donate15(c: CallbackQuery):
-    prices = [LabeledPrice(label="Пополнить бота на 15 ⭐", amount=PRICE)]
+# ────────── донат (PRICE ⭐) ──────────
+@dp.callback_query(F.data == "donate")
+async def donate(c: CallbackQuery):
+    prices = [LabeledPrice(label=f"Донат {PRICE} ⭐", amount=PRICE)]
     await bot.send_invoice(
         chat_id=c.from_user.id,
-        title="Донат 15 звёзд",
-        description="Эти звёзды помогут боту выкупать редкие подарки.",
-        payload="donate15",
+        title=f"Донат {PRICE} звёзд",
+        description="Поддержка автоскупки подарков.",
+        payload="donate",
         provider_token=PROVIDER_STAR,
         currency="XTR",
-        prices=prices
-    )
-    print(f"INFO  |  Invoice 15 ⭐ → user {c.from_user.id}")
+        prices=prices)
     await c.answer()
 
 @dp.pre_checkout_query()
-async def pre_checkout(q):           # подтверждаем любую оплату
-    await bot.answer_pre_checkout_query(q.id, ok=True)
+async def pre_checkout(q):  await bot.answer_pre_checkout_query(q.id, ok=True)
 
 @dp.message(F.successful_payment)
 async def thanks(m: Message):
-    amount = m.successful_payment.total_amount  # уже 15, без /100
-    await m.answer(f"✅ Спасибо за донат в {amount} XTR!")
-    print(f"OK    |  Получен донат {amount} XTR от {m.from_user.id}")
+    await m.answer(f"✅ Спасибо за донат {m.successful_payment.total_amount} XTR!")
 
 # ────────── баланс ──────────
 @dp.callback_query(F.data == "bal")
 async def bal(c: CallbackQuery):
     bal = await bot.get_my_star_balance()
-    await c.message.answer(f"💫 Баланс бота: {bal.amount} XTR")
-    await c.answer()
-    print(f"INFO  |  Баланс запрошен: {bal.amount} XTR")
+    await c.message.answer(f"💫 Баланс бота: {bal.amount} XTR"); await c.answer()
 
-# ────────── авто-монитор редких подарков ──────────
+# ────────── авто-выкуп редких ──────────
 async def monitor_gifts():
-    depleted: set[str] = set()                 # уже выкупленные «в ноль»
-
+    depleted: set[str] = set()
     while True:
         try:
-            # ─ 1. свежие данные ─
-            gifts_resp = await bot.get_available_gifts()
-            balance    = (await bot.get_my_star_balance()).amount  # целые XTR
-
-            rare = [
-                g for g in gifts_resp.gifts
-                if g.total_count is not None
-                   and g.remaining_count > 0
-                   and g.id not in depleted
-            ]
-            if not rare:
-                print("INFO | редких подарков нет – жду…")
-                await asyncio.sleep(CHECK_INTERVAL)
-                continue
-
+            gifts  = await bot.get_available_gifts()
+            money  = (await bot.get_my_star_balance()).amount
+            rare   = [g for g in gifts.gifts if g.total_count and g.remaining_count and g.id not in depleted]
             rare.sort(key=lambda g: g.star_count, reverse=True)
-            print(f"INFO | редкие {[g.star_count for g in rare]}, баланс {balance}")
 
-            # ─ 2. идём по подаркам от дорогих к дешёвым ─
-            for gift in rare:
-                price = gift.star_count
-                if balance < price:
-                    print(f"SKIP | {gift.id}: цена {price} ⭐, баланс {balance}")
-                    continue    # возможно, хватит на более дешёвый
-
-                while balance >= price:
-                    # 2а. уточняем актуальный остаток
+            for g in rare:
+                price = g.star_count
+                if money < price: continue
+                while money >= price:
                     fresh = await bot.get_available_gifts()
-                    fresh_gift = next((g for g in fresh.gifts if g.id == gift.id), None)
-                    if not fresh_gift or fresh_gift.remaining_count == 0:
-                        print(f"DONE | {gift.id} закончился (кто-то выкупил)")
-                        depleted.add(gift.id)
-                        break
-
+                    fresh_g = next((x for x in fresh.gifts if x.id == g.id), None)
+                    if not fresh_g or fresh_g.remaining_count == 0:
+                        depleted.add(g.id); break
                     try:
-                        await bot.send_gift(user_id=ADMIN_ID, gift_id=gift.id)
-                        balance -= price
-                        print(f"OK   | {gift.id} −{price} ⭐, баланс {balance}")
-                        await asyncio.sleep(1)      # anti-flood
-                    except Exception as e:
-                        # если подарок внезапно кончился — отметим и выйдем
-                        if "GIFT" in str(e).upper():
-                            print(f"GONE | {gift.id} недоступен: {e}")
-                            depleted.add(gift.id)
-                        else:
-                            print(f"ERR  | {gift.id}: {e}")
-                        break
-
+                        await bot.send_gift(user_id=ADMIN_ID, gift_id=g.id)
+                        money -= price
+                        await asyncio.sleep(1)
+                    except Exception: break
         except Exception as e:
-            print(f"ERR  | monitor_gifts: {e}")
-
+            print("monitor error:", e)
         await asyncio.sleep(CHECK_INTERVAL)
 
-
-# ────────── запуск ──────────
+# ────────── старт ──────────
 async def main():
     asyncio.create_task(monitor_gifts())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-   
