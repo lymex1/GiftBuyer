@@ -1,4 +1,5 @@
 import asyncio
+import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -7,7 +8,7 @@ from aiogram.types import (
 )
 
 API_TOKEN      = os.getenv("BOT_TOKEN")
-ADMIN_ID       = 993414497
+ADMIN_ID       = os.getenv("ADMIN_ID")
 CHECK_INTERVAL = 5        
 PRICE      = 100      
 PROVIDER_STAR  = "STARS"  
