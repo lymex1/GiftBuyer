@@ -10,7 +10,7 @@ from aiogram.types import (
 API_TOKEN      = os.getenv("BOT_TOKEN")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 CHECK_INTERVAL = 5        
-PRICE      = 100      
+PRICE      = 15      
 PROVIDER_STAR  = "STARS"  
 
 bot = Bot(API_TOKEN)
