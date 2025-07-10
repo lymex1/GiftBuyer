@@ -10,7 +10,7 @@ from aiogram.types import (
 API_TOKEN      = os.getenv("BOT_TOKEN")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 CHECK_INTERVAL = 5        
-PRICE      = 15      
+PRICE      = 500    
 PROVIDER_STAR  = "STARS"  
 
 bot = Bot(API_TOKEN)
@@ -21,7 +21,7 @@ dp  = Dispatcher()
 async def start(m: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 Получить подарок за 15 ⭐", callback_data="buy15")],
-        [InlineKeyboardButton(text="💸 Донат 100 ⭐",               callback_data="donate15")],
+        [InlineKeyboardButton(text=f"💸 Донат {PRICE} ⭐",               callback_data="donate15")],
         [InlineKeyboardButton(text="💰 Баланс бота",              callback_data="bal")]
     ])
     await m.answer("Выберите действие:", reply_markup=kb)
